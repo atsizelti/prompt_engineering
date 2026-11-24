@@ -80,7 +80,7 @@ def setup(student_id: str, provider: str = "anthropic", api_key: str | None = No
           allowance_usd: float = 1.0, allowed_models=None) -> None:
     """Configure the harness once per notebook.
     allowed_models: None = the class allowlist in prices.json; "all" = no limit (instructor scripts); or a list.
-    Spend is remembered in .arena_spent_<student>.json, so re-running this cell does NOT reset your allowance."""
+    Spend is remembered per round in .arena_spent_<student>.json, so re-running this cell does NOT reset your allowance."""
     prices = _prices()
     if provider not in ("anthropic", "openai", "mock"):
         raise ValueError("provider must be 'anthropic', 'openai' or 'mock'")
@@ -103,25 +103,36 @@ def _spent_file() -> Path:
     return Path(f".arena_spent_{_cfg['student_id']}.json")
 
 
-def _read_spent() -> float:
+def _read_all() -> dict:
     try:
-        return float(json.loads(_spent_file().read_text())["spent"])
+        d = json.loads(_spent_file().read_text())
+        return d if isinstance(d.get("by_round"), dict) else {"by_round": {}}
     except Exception:
-        return 0.0
+        return {"by_round": {}}
+
+
+def _read_spent() -> float:
+    """Spend so far in the CURRENT round (each notebook has its own allowance)."""
+    return float(_read_all()["by_round"].get(_cfg["round"], 0.0))
 
 
 def _write_spent() -> None:
     try:
-        _spent_file().write_text(json.dumps({"spent": _cfg["spent"]}))
+        d = _read_all()
+        d["by_round"][_cfg["round"]] = _cfg["spent"]
+        _spent_file().write_text(json.dumps(d))
     except OSError:
         pass
 
 
 def set_round(name: str) -> None:
+    """Name the round (also selects that round's allowance bucket)."""
     _cfg["round"] = name
+    _cfg["spent"] = _read_spent()
 
 
 def spent() -> float:
+    """Spend in the current round."""
     return _cfg["spent"]
 
 
