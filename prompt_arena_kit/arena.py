@@ -82,6 +82,10 @@ def setup(student_id: str, provider: str = "openai", api_key: str | None = None,
     allowed_models: None = the class allowlist in prices.json; "all" = no limit (instructor scripts); or a list.
     Spend is remembered per round in .arena_spent_<student>.json, so re-running this cell does NOT reset your allowance."""
     prices = _prices()
+    if str(student_id).strip().lower() in ("", "your-nickname", "anon", "nickname"):
+        raise ValueError("Set NICK (the line above this one) to your own nickname before you run this cell. "
+                         "The instructor sees it on the board, and your allowance is tracked under it.")
+    student_id = "".join(str(student_id).split())[:24]          # no spaces, short
     if provider not in ("openai", "mock"):
         raise ValueError("provider must be 'openai' or 'mock'")
     if provider != "mock" and not api_key:
