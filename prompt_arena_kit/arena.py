@@ -792,11 +792,16 @@ def _row(res: Result, rnd: str, note: str) -> dict:
     }
 
 
+def _clean(row: dict) -> dict:
+    """NaN/inf are not valid JSON (the Sheet would reject the row): send them as empty cells."""
+    return {k: ("" if isinstance(v, float) and (v != v or v in (float("inf"), float("-inf"))) else v) for k, v in row.items()}
+
+
 def _post(row: dict) -> bool:
     if not _cfg["endpoint"]:
         return False
     try:
-        body = json.dumps({"token": _cfg["token"], "row": row}).encode()
+        body = json.dumps({"token": _cfg["token"], "row": _clean(row)}, allow_nan=False).encode()
         req = urllib.request.Request(_cfg["endpoint"], data=body, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=8) as r:
             return r.status == 200
