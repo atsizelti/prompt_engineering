@@ -88,6 +88,11 @@ def setup(student_id: str, provider: str = "openai", api_key: str | None = None,
         api_key = os.environ.get("OPENAI_API_KEY")
     if provider != "mock" and not api_key:
         raise ValueError("No API key. Pass api_key=... (Colab: userdata.get('OPENAI_API_KEY')).")
+    if provider != "mock":
+        api_key = "".join(str(api_key).split())          # keys never contain spaces or line breaks: remove pasted ones
+        if not api_key.isascii():
+            raise ValueError("Your API key contains a non-ASCII character (a curly quote or a hidden symbol from copy-paste). "
+                             "Delete the secret and paste the key again.")
     allowed = None if allowed_models == "all" else (list(allowed_models) if allowed_models else prices.get("student_allowed"))
     _cfg.update(student_id=student_id, provider=provider, api_key=api_key, client=None,
                 model=model or prices["default_model"][provider],
@@ -422,12 +427,17 @@ def complete(prompt_text: str, model: str | None = None, temperature: float | No
             if "insufficient_quota" in msg or "exceeded your current quota" in msg or "billing" in msg:
                 raise RuntimeError("The class API budget is used up (or billing is off). "
                                    "Tell the instructor. Runs you already finished are cached and will not be lost.") from e
+            root = repr(getattr(e, "__cause__", None)).lower()
+            if "illegal header value" in root or "illegal header value" in msg:
+                raise RuntimeError("Your API key has a hidden space or line break in it (copy-paste). "
+                                   "Re-paste it into the OPENAI_API_KEY secret, then Runtime > Restart session.") from e
             if "invalid_api_key" in msg or "incorrect api key" in msg or "401" in msg:
                 raise RuntimeError("Your API key was rejected. Check the secret name (OPENAI_API_KEY), "
                                    "that 'Notebook access' is on, and that you pasted the whole key.") from e
             time.sleep(min(30.0, 1.5 * (2 ** attempt)) * (0.5 + random.random()))   # backoff with jitter
     else:
-        raise RuntimeError(f"API call failed after retries: {last}")
+        cause = getattr(last, "__cause__", None)
+        raise RuntimeError(f"API call failed after retries: {last}" + (f" (underlying cause: {cause!r})" if cause else ""))
     cost = _cost(model, tin, tout)
     with _lock:
         _cfg["spent"] += cost
