@@ -674,7 +674,7 @@ def report_r6(tool: str, traps_caught: int, turns: int, mode: str = "fast", veri
     """Self-report for the coding-tools round (R6). Appears on the instructor's board."""
     note = json.dumps({"tool": tool, "traps_caught": int(traps_caught), "turns": int(turns),
                        "mode": mode, "verified": bool(verified)})
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "student_id": _cfg["student_id"], "round": "R6",
+    row = {"ts": int(time.time()), "student_id": _cfg["student_id"], "round": "R6",
            "condition": arm, "task": "G", "split": "report", "model": tool, "note": note}
     with _LOG_FILE.open("a") as f:
         f.write(json.dumps({**row, "_sent": False}) + "\n")
@@ -685,7 +685,7 @@ def ping() -> bool:
     """Check that the instructor's board is reachable. Prints a clear message."""
     if not _cfg["endpoint"]:
         print("[arena] No endpoint set: your runs stay on this notebook only."); return False
-    ok = _post({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "student_id": _cfg["student_id"], "round": "PING",
+    ok = _post({"ts": int(time.time()), "student_id": _cfg["student_id"], "round": "PING",
                 "split": "ping", "note": "setup check"})
     print("[arena] board reachable: you will appear on the projector." if ok else
           "[arena] Could not reach the board. Check ENDPOINT and TOKEN, or Wi-Fi. Your runs are saved locally.")
@@ -694,7 +694,7 @@ def ping() -> bool:
 
 def submit(prompt: str, task: str = "A", model: str | None = None, dev_f1: float | None = None) -> None:
     """Hand in your final prompt. The instructor runs it on the hidden test set after the session."""
-    row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "student_id": _cfg["student_id"], "round": "SUBMIT",
+    row = {"ts": int(time.time()), "student_id": _cfg["student_id"], "round": "SUBMIT",
            "task": task, "split": "submit", "model": model or _cfg["model"], "prompt": prompt[:4000],
            "prompt_hash": hashlib.md5(prompt.encode()).hexdigest()[:8],
            "f1": dev_f1 if dev_f1 is not None else "", "note": "final submission"}
@@ -778,7 +778,7 @@ def reflect_and_rewrite(prompt: str, result: Result, model: str | None = None, k
 def _row(res: Result, rnd: str, note: str) -> dict:
     m = res.metrics
     return {
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "student_id": _cfg["student_id"], "round": rnd,
+        "ts": int(time.time()), "student_id": _cfg["student_id"], "round": rnd,
         "condition": res.condition or "", "task": res.task, "split": res.split, "model": res.model,
         "prompt": res.prompt[:4000], "prompt_hash": hashlib.md5(res.prompt.encode()).hexdigest()[:8],
         "f1": round(m.get("macro_f1", float("nan")), 4), "kappa": round(m.get("kappa", float("nan")), 4),
