@@ -43,7 +43,7 @@ __all__ = [
     "setup", "set_round", "load_task", "examples", "evaluate", "consistency",
     "estimate_cost", "complete", "audit_paraphrases", "make_paraphrases",
     "reflect_and_rewrite", "spent", "remaining", "flush_log", "BudgetExceeded",
-    "try_one", "cascade", "ping", "submit", "two_prop_p", "peek", "report_r6", "token_peek",
+    "try_one", "cascade", "ping", "submit", "two_prop_p", "peek", "report_r6", "token_peek", "show_codebook", "show_twins", "problem_rows", "changed_rows", "flipped_pairs", "audit_summary", "show_pairs",
 ]
 
 # --------------------------------------------------------------------------
@@ -597,6 +597,13 @@ def consistency(prompt: str, task: str = "A", n: int = 30, runs: int = 3, temper
     f1s = [r.metrics["macro_f1"] for r in results]
     out = {"agreement": agree / pairs, "f1_min": min(f1s), "f1_max": max(f1s), "runs": runs}
     print(f"[consistency] agreement {out['agreement']:.0%}; F1 range {out['f1_min']:.3f}-{out['f1_max']:.3f}")
+    unstable = [(results[0].records[i], [preds[r][i] for r in range(runs)]) for i in range(len(preds[0]))
+                if len({preds[r][i] for r in range(runs)}) > 1]
+    out["unstable_items"] = [u[0]["id"] for u in unstable]
+    print(f"{len(unstable)} of {len(preds[0])} items got a DIFFERENT label in at least one of the {runs} runs." +
+          (" The first ones:" if unstable else ""))
+    for rec, ps in unstable[:3]:
+        print(f"   [{rec['id']}] correct = {rec['gold']}  runs said: {ps}\n      {rec['text'][:170]}")
     return out
 
 
@@ -658,19 +665,108 @@ def cascade(prompt: str, task: str = "A", cheap: str | None = None, strong: str 
     return res
 
 
-def peek(task_id: str, k: int = 4, seed: int = 0, show_labels: bool = False) -> None:
-    """Print the client brief, the labels and k sample items (without gold labels unless asked)."""
+def peek(task_id: str, k: int = 4, seed: int = 0, show_labels: bool = False, split: str = "dev") -> None:
+    """Print the client brief, the labels, the codebook and k sample items (labels hidden unless asked)."""
     t = load_task(task_id)
     print(f"Task {t.id}: {t.name}  [{t.discipline}]")
     if t.brief:
         print(t.brief)
     if t.labels:
         print("Labels:", ", ".join(t.labels))
-    items = [i for i in _load_split(t, "dev") if not i.get("shot")]
+    items = [i for i in _load_split(t, split) if not i.get("shot")]
+    print(f"({len(items)} items in the '{split}' set; showing {min(k, len(items))})")
     random.Random(seed).shuffle(items)
     for it in items[:k]:
         tag = f"   -> {it['label']}" if (show_labels and "label" in it) else ""
-        print(f"\n[{it['id']}] {it['text']}{tag}")
+        src = f"  ({it['newspaper']})" if it.get("newspaper") else ""
+        print(f"\n[{it['id']}]{src} {it['text']}{tag}")
+
+
+def show_codebook(task_id: str) -> None:
+    """Print the official label definitions for a task."""
+    t = load_task(task_id)
+    print(f"Codebook for task {t.id}: {t.name}")
+    print(t.codebook_text())
+
+
+def show_twins(task_id: str = "E", k: int = 2, seed: int = 0) -> None:
+    """Show k clean posts next to their INJECTED twins (same post plus a sentence posing as an instruction)."""
+    t = load_task(task_id)
+    items = _load_split(t, "robust")
+    by_id = {i["id"]: i for i in items}
+    clean = [i for i in items if i.get("variant") == "clean"]
+    random.Random(seed).shuffle(clean)
+    for it in clean[:k]:
+        twin = by_id.get(it["id"] + "i")
+        print(f"[{it['id']}]  CLEAN, correct label = {it['label']}\n   {it['text']}")
+        if twin:
+            extra = twin["text"][len(it["text"]):].strip()
+            print(f"[{twin['id']}] INJECTED twin, same correct label = {twin['label']}\n   ...the same post, then this extra text: {extra}\n")
+
+
+def problem_rows(res: "Result", variant: str | None = None, k: int = 6) -> None:
+    """Show the rows the model got WRONG (optionally only one variant), with the end of the model's reply."""
+    rows = [r for r in res.records if not r["correct"] and (variant is None or r["variant"] == variant)]
+    name = f"variant '{variant}'" if variant else "all rows"
+    print(f"{len(rows)} wrong rows in {name}" + (f"; showing the first {k}" if len(rows) > k else "") + ".")
+    for r in rows[:k]:
+        print(f"\n[{r['id']}] ({r['variant']}) correct = {r['gold']}   predicted = {r['pred']}")
+        print(f"   post : {r['text'][:230]}")
+        tail = (r.get("raw") or "").strip().splitlines()[-1:] or [""]
+        print(f"   reply: ...{tail[0][-110:]}")
+
+
+def changed_rows(a: "Result", b: "Result", k: int = 6, name_a: str = "run A", name_b: str = "run B") -> None:
+    """Show the items whose predicted label differs between two runs on the same items."""
+    ia = {r["id"]: r for r in a.records}
+    rows = [(ia[r["id"]], r) for r in b.records if r["id"] in ia and ia[r["id"]]["pred"] != r["pred"]]
+    print(f"{len(rows)} of {len(b.records)} items got a different label between {name_a} and {name_b}" +
+          (f"; showing the first {k}" if len(rows) > k else "") + ".")
+    for ra, rb in rows[:k]:
+        print(f"\n[{rb['id']}] correct = {rb['gold']}   {name_a}: {ra['pred']}   {name_b}: {rb['pred']}\n   {rb['text'][:200]}")
+
+
+def flipped_pairs(res: "Result", k: int = 5) -> None:
+    """For matched pairs (same facts, only the name differs): show the pairs whose label changed."""
+    pairs: dict = {}
+    for r in res.records:
+        if r.get("pair_id"):
+            pairs.setdefault(r["pair_id"], []).append(r)
+    full = [v for v in pairs.values() if len(v) == 2]
+    flipped = [v for v in full if v[0]["pred"] != v[1]["pred"]]
+    print(f"{len(flipped)} of {len(full)} matched pairs changed label when ONLY the name changed (correct: 0).")
+    for a, b in flipped[:k]:
+        print(f"\n{a['pair_id']}: correct label for both = {a['gold']}")
+        print(f"   {a['text'][:150]}   -> {a['pred']}")
+        print(f"   {b['text'][:150]}   -> {b['pred']}")
+
+
+def show_pairs(task_id: str = "F", k: int = 2, seed: int = 0) -> None:
+    """Show k matched pairs: the SAME facts with a different name. The correct label is identical for both."""
+    t = load_task(task_id)
+    pairs: dict = {}
+    for it in _load_split(t, "dev"):
+        if it.get("pair_id"):
+            pairs.setdefault(it["pair_id"], []).append(it)
+    ids = [i for i, v in pairs.items() if len(v) == 2]
+    random.Random(seed).shuffle(ids)
+    print(f"{len(ids)} matched pairs in this task; showing {min(k, len(ids))}.")
+    for pid in ids[:k]:
+        a, b = pairs[pid]
+        print(f"\n{pid}: correct label for BOTH = {a['label']}\n   version A: {a['text']}\n   version B: {b['text']}")
+
+
+def audit_summary(rows: list, alpha: float = 0.05) -> None:
+    """Print the audit as a small table: one line per prompt version."""
+    print(f"{'prompt version':<16}{'Free Tide':>10}{'Gazette':>9}{'difference':>12}{'p-value':>10}   verdict (alpha {alpha})")
+    sig = 0
+    for i, r in enumerate(rows):
+        name = "main prompt" if i == 0 else f"paraphrase {i}"
+        verdict = "SIGNIFICANT" if r["p_value"] < alpha else "not significant"
+        sig += r["p_value"] < alpha
+        print(f"{name:<16}{r['share_a']:>10.0%}{r['share_b']:>9.0%}{r['diff']:>+12.2f}{r['p_value']:>10.4f}   {verdict}")
+    print(f"\n{sig} of {len(rows)} versions of the SAME question say 'significant'. "
+          + ("The conclusion depends on the wording." if 0 < sig < len(rows) else "The conclusion is the same for every version."))
 
 
 def report_r6(tool: str, traps_caught: int, turns: int, mode: str = "fast", verified: bool = False,
