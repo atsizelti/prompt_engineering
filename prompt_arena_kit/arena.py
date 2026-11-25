@@ -5,12 +5,12 @@ Students write prompts. This module runs them on a shared task, scores them
 (macro-F1, Cohen's kappa, bootstrap CI, validity, cost), enforces a spend
 allowance, and reports each run to the instructor's sheet.
 
-Pure standard library (the provider SDKs are imported only when used).
+Pure standard library (the OpenAI SDK is imported only when a real model is used).
 
 Quick use (in Colab):
 
     import arena
-    arena.setup(student_id="otter42", api_key=userdata.get("ANTHROPIC_API_KEY"),
+    arena.setup(student_id="otter42", api_key=userdata.get("OPENAI_API_KEY"),
                 endpoint=ENDPOINT, token=TOKEN, allowance_usd=0.50)
     res = arena.evaluate("Classify the text.\\n{codebook}\\n\\n{text}", task="A")
     res.summary()
@@ -55,7 +55,7 @@ PRICES_PATH = HERE / "prices.json"
 
 _lock = threading.Lock()
 _cfg = {
-    "student_id": "anon", "provider": "anthropic", "model": None,
+    "student_id": "anon", "provider": "openai", "model": None,
     "api_key": None, "endpoint": None, "token": None,
     "allowance": 1.0, "spent": 0.0, "round": "R?", "client": None,
 }
@@ -75,19 +75,19 @@ class PriceMissing(RuntimeError):
 # --------------------------------------------------------------------------
 # Setup
 # --------------------------------------------------------------------------
-def setup(student_id: str, provider: str = "anthropic", api_key: str | None = None,
+def setup(student_id: str, provider: str = "openai", api_key: str | None = None,
           model: str | None = None, endpoint: str | None = None, token: str | None = None,
           allowance_usd: float = 1.0, allowed_models=None) -> None:
     """Configure the harness once per notebook.
     allowed_models: None = the class allowlist in prices.json; "all" = no limit (instructor scripts); or a list.
     Spend is remembered per round in .arena_spent_<student>.json, so re-running this cell does NOT reset your allowance."""
     prices = _prices()
-    if provider not in ("anthropic", "openai", "mock"):
-        raise ValueError("provider must be 'anthropic', 'openai' or 'mock'")
+    if provider not in ("openai", "mock"):
+        raise ValueError("provider must be 'openai' or 'mock'")
     if provider != "mock" and not api_key:
-        api_key = os.environ.get("ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY")
     if provider != "mock" and not api_key:
-        raise ValueError("No API key. Pass api_key=... (Colab: userdata.get('ANTHROPIC_API_KEY')).")
+        raise ValueError("No API key. Pass api_key=... (Colab: userdata.get('OPENAI_API_KEY')).")
     allowed = None if allowed_models == "all" else (list(allowed_models) if allowed_models else prices.get("student_allowed"))
     _cfg.update(student_id=student_id, provider=provider, api_key=api_key, client=None,
                 model=model or prices["default_model"][provider],
@@ -334,31 +334,13 @@ def _load_cache() -> None:
 
 def _client():
     if _cfg["client"] is None:
-        if _cfg["provider"] == "anthropic":
-            import anthropic
-            _cfg["client"] = anthropic.Anthropic(api_key=_cfg["api_key"])
-        else:
-            import openai
-            _cfg["client"] = openai.OpenAI(api_key=_cfg["api_key"])
+        import openai
+        _cfg["client"] = openai.OpenAI(api_key=_cfg["api_key"])
     return _cfg["client"]
 
 
 def _raw_call(model, text, temperature, max_tokens, extra):
-    p = _cfg["provider"]
     extra = dict(extra or {})
-    if p == "anthropic":
-        kw = dict(model=model, max_tokens=max_tokens, messages=[{"role": "user", "content": text}], **extra)
-        if temperature is not None:
-            kw["temperature"] = temperature
-        try:
-            r = _client().messages.create(**kw)
-        except Exception as e:                      # some models reject temperature
-            if "temperature" in str(e).lower() and "temperature" in kw:
-                kw.pop("temperature"); r = _client().messages.create(**kw)
-            else:
-                raise
-        out = "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
-        return out, r.usage.input_tokens, r.usage.output_tokens
     kw = dict(model=model, messages=[{"role": "user", "content": text}],
               max_completion_tokens=max_tokens, **extra)
     if temperature is not None:

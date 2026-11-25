@@ -1,6 +1,6 @@
 # House rules block (arms 2 and 3)
 
-Paste into ChatGPT custom instructions or the first message. In Claude Code, put it in `CLAUDE.md`. It is the same text the R6 notebook prints.
+Paste into ChatGPT custom instructions or the first message. For a coding agent, put it in the project's instruction file. It is the same text the R6 notebook prints.
 
 ```
 HOUSE RULES for this analysis

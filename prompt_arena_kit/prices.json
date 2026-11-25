@@ -1,26 +1,10 @@
 {
-  "_note": "USD per MILLION tokens. OpenAI prices read from developers.openai.com model pages on 24 Nov 2026 (standard tier, text). Anthropic prices are null: fill them in if you use Anthropic. A null price makes the harness refuse that model. 'mock' is fake and free. 'student_allowed' limits which models students may call (gpt-5.4 is ~12x the cost of nano); instructor scripts pass allowed_models='all'.",
+  "_note": "USD per MILLION tokens. OpenAI prices read from developers.openai.com model pages on 24 Nov 2026 (standard tier, text). A null price makes the harness refuse that model. 'mock' is fake and free. 'student_allowed' limits which models students may call (gpt-5.4 is about 12x the cost of nano); instructor scripts pass allowed_models='all'.",
   "default_model": {
-    "anthropic": "claude-haiku-5-5",
     "openai": "gpt-4o-mini",
     "mock": "mock"
   },
   "models": {
-    "claude-haiku-5-5": {
-      "in": null,
-      "out": null,
-      "tier": "small"
-    },
-    "claude-sonnet-5-5": {
-      "in": null,
-      "out": null,
-      "tier": "mid"
-    },
-    "claude-opus-5-5": {
-      "in": null,
-      "out": null,
-      "tier": "large"
-    },
     "mock": {
       "in": 0.1,
       "out": 0.5,

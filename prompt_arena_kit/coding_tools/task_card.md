@@ -1,6 +1,6 @@
 # R6 task card: AI data-analyst bake-off
 
-**Time:** 30 minutes working + 5 minutes reporting. **Tool:** anything you have (ChatGPT with file upload and data analysis, Claude Code, Copilot, Gemini in Colab).
+**Time:** 30 minutes working + 5 minutes reporting. **Tool:** anything you have (ChatGPT with file upload and data analysis, Copilot, Gemini in Colab, or another assistant).
 
 ## The client
 
@@ -13,7 +13,7 @@
 Run the R6 notebook (`R6_coding_tools_helper.ipynb`). It tells you which arm you are in and shows the text to paste:
 
 1. **None:** paste only the client brief.
-2. **House rules:** paste the house-rules block first (custom instructions or the first message; for Claude Code, put it in `CLAUDE.md`).
+2. **House rules:** paste the house-rules block first (ChatGPT custom instructions or the first message; for a coding agent, its project instruction file).
 3. **House rules + a check:** the same block, plus the instruction to write assertions and **show their output** before reporting.
 
 ## What to do
