@@ -43,7 +43,7 @@ __all__ = [
     "setup", "set_round", "load_task", "examples", "evaluate", "consistency",
     "estimate_cost", "complete", "audit_paraphrases", "make_paraphrases",
     "reflect_and_rewrite", "spent", "remaining", "flush_log", "BudgetExceeded",
-    "try_one", "cascade", "ping", "submit", "two_prop_p", "peek", "report_r6",
+    "try_one", "cascade", "ping", "submit", "two_prop_p", "peek", "report_r6", "token_peek",
 ]
 
 # --------------------------------------------------------------------------
@@ -683,6 +683,38 @@ def report_r6(tool: str, traps_caught: int, turns: int, mode: str = "fast", veri
     with _LOG_FILE.open("a") as f:
         f.write(json.dumps({**row, "_sent": False}) + "\n")
     print("[arena] reported." if _post(row) else "[arena] saved locally; tell the instructor your numbers out loud.")
+
+
+def token_peek(prompt: str, task: str = "A", k: int = 3, model: str | None = None, n_items: int | None = None,
+               budget: float | None = None, seed: int = 0) -> dict:
+    """Look at k real inputs and the model's replies, with the TOKENS and COST of each, before you predict anything.
+    Pass n_items (and budget) to see what the full job would cost at this rate."""
+    t = load_task(task)
+    model = model or _cfg["model"]
+    items = [i for i in _load_split(t, "dev") if not i.get("shot")]
+    random.Random(seed).shuffle(items)
+    tot_in = tot_out = tot_cost = tot_item = 0
+    for n, it in enumerate(items[:k], 1):
+        out, tin, tout, cost = complete(_render(prompt, it, t, None), model, 0.0, 1500, None, 0, it, t)
+        item_tokens = max(1, len(it["text"]) // 4)          # rough: about 4 characters per token
+        tot_in += tin; tot_out += tout; tot_cost += cost; tot_item += item_tokens
+        print(f"--- example {n} ({model}) ---")
+        print(f"INPUT (the item, about {item_tokens} tokens): {it['text'][:220]}")
+        print(f"MODEL REPLY: {out.strip()[:260]}")
+        print(f"TOKENS: {tin} in (the whole prompt) + {tout} out  ->  ${cost:.5f} for this one item   [correct label: {it.get('label')}]\n")
+    kk = max(1, min(k, len(items)))
+    res = {"tokens_in": tot_in / kk, "tokens_out": tot_out / kk, "cost_per_item": tot_cost / kk}
+    res["cost_per_1k"] = res["cost_per_item"] * 1000
+    print(f"AVERAGE: {res['tokens_in']:.0f} tokens in, {res['tokens_out']:.0f} tokens out -> ${res['cost_per_item']:.5f} per item, ${res['cost_per_1k']:.3f} per 1,000 items")
+    print(f"Of the {res['tokens_in']:.0f} input tokens, only about {tot_item / kk:.0f} are the item itself; the rest is your instructions and codebook. (rough: 4 characters per token)")
+    if n_items:
+        full = res["cost_per_item"] * n_items
+        res["full_job"] = full
+        line = f"At this rate {n_items:,} items would cost about ${full:,.2f}"
+        if budget:
+            line += f"   vs budget ${budget:,.2f}: " + ("fits" if full <= budget else "OVER BUDGET")
+        print(line + ".  (Only 3 items measured: treat it as a first guess.)")
+    return res
 
 
 def ping() -> bool:
